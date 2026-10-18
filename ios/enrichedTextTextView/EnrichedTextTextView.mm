@@ -1,10 +1,20 @@
 #import "EnrichedTextTextView.h"
 #import "EnrichedTextView.h"
 #import "htmlParser/HtmlParser.h"
+#import "utils/AccessibilityUtils.h"
 #import "utils/EnrichedTextTouchHandler.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @implementation EnrichedTextTextView
+
+- (void)setIsAccessibilityElement:(BOOL)isAccessibilityElement {
+}
+
+- (NSArray<UIAccessibilityCustomAction *> *)accessibilityCustomActions {
+  return [AccessibilityUtils
+      mergeActions:[self.host accessibilityCustomActions]
+              with:[self.touchHandler accessibilityActions]];
+}
 
 - (void)layoutSubviews {
   [super layoutSubviews];

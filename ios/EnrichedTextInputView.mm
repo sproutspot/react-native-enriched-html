@@ -9,6 +9,7 @@
 #import "interfaces/ImageAttachment.h"
 #import "interfaces/StyleHeaders.h"
 #import "internals/EnrichedTextInputViewComponentDescriptor.h"
+#import "utils/AccessibilityUtils.h"
 #import "utils/AlignmentUtils.h"
 #import "utils/AttachmentLayoutUtils.h"
 #import "utils/DotReplacementUtils.h"
@@ -18,6 +19,7 @@
 #import "utils/StyleUtils.h"
 #import "utils/TextBlockTapGestureRecognizer.h"
 #import "utils/TextInsertionUtils.h"
+#import "utils/TextListsUtils.h"
 #import "utils/WordsUtils.h"
 #import "utils/ZeroWidthSpaceUtils.h"
 #import <React/RCTConversions.h>
@@ -124,6 +126,113 @@ Class<RCTComponentViewProtocol> EnrichedTextInputViewCls(void) {
     self.contentView = textView;
   }
   return self;
+}
+
+// MARK: - Accessibility
+
+- (NSObject *)accessibilityElement {
+  return textView;
+}
+
+- (BOOL)isAccessibilityElement {
+  return NO;
+}
+
+- (nullable NSString *)accessibilityPlaceholder {
+  if (_placeholderLabel.hidden || _placeholderLabel.text.length == 0) {
+    return nil;
+  }
+  return _placeholderLabel.text;
+}
+
+- (NSArray<UIAccessibilityCustomAction *> *)checkboxAccessibilityActions {
+  CheckboxListStyle *checkboxStyle =
+      (CheckboxListStyle *)stylesDict[@([CheckboxListStyle getType])];
+  if (checkboxStyle == nil || !textView.editable) {
+    return @[];
+  }
+
+  NSString *text = textView.textStorage.string;
+  NSMutableArray<UIAccessibilityCustomAction *> *actions =
+      [NSMutableArray array];
+  __weak EnrichedTextInputView *weakSelf = self;
+
+  [text enumerateSubstringsInRange:NSMakeRange(0, text.length)
+                           options:NSStringEnumerationByParagraphs |
+                                   NSStringEnumerationSubstringNotRequired
+                        usingBlock:^(NSString *_Nullable substring,
+                                     NSRange paragraphRange,
+                                     NSRange enclosingRange, BOOL *stop) {
+                          NSUInteger location = paragraphRange.location;
+                          if (![self isCheckboxAt:location
+                                        withStyle:checkboxStyle]) {
+                            return;
+                          }
+
+                          BOOL checked =
+                              [checkboxStyle getCheckboxStateAt:location];
+                          NSString *itemText = [AccessibilityUtils
+                              spokenTextInRange:paragraphRange
+                                       ofString:text];
+                          if (itemText.length == 0) {
+                            itemText = @"empty item";
+                          }
+                          NSString *name = [NSString
+                              stringWithFormat:checked ? @"Uncheck: %@"
+                                                       : @"Check: %@",
+                                               itemText];
+
+                          [actions
+                              addObject:
+                                  [[UIAccessibilityCustomAction alloc]
+                                       initWithName:name
+                                      actionHandler:^BOOL(
+                                          UIAccessibilityCustomAction *action) {
+                                        return [weakSelf
+                                            toggleCheckboxFromAccessibilityAt:
+                                                location];
+                                      }]];
+                        }];
+
+  return actions;
+}
+
+- (BOOL)isCheckboxAt:(NSUInteger)location
+           withStyle:(CheckboxListStyle *)checkboxStyle {
+  if (location >= textView.textStorage.length) {
+    return NO;
+  }
+  NSParagraphStyle *pStyle =
+      [textView.textStorage attribute:NSParagraphStyleAttributeName
+                              atIndex:location
+                       effectiveRange:NULL];
+  return [TextListsUtils firstTextListWithPrefix:[checkboxStyle getMarkerPrefix]
+                                         inArray:pStyle.textLists] != nil;
+}
+
+- (BOOL)toggleCheckboxFromAccessibilityAt:(NSUInteger)location {
+  CheckboxListStyle *checkboxStyle =
+      (CheckboxListStyle *)stylesDict[@([CheckboxListStyle getType])];
+  if (checkboxStyle == nil || !textView.editable ||
+      ![self isCheckboxAt:location withStyle:checkboxStyle]) {
+    return NO;
+  }
+
+  [self toggleCheckboxAt:location];
+  BOOL checked = [checkboxStyle getCheckboxStateAt:location];
+  UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification,
+                                  checked ? @"Checked" : @"Unchecked");
+  return YES;
+}
+
+- (void)toggleCheckboxAt:(NSUInteger)location {
+  CheckboxListStyle *checkboxStyle =
+      (CheckboxListStyle *)stylesDict[@([CheckboxListStyle getType])];
+  if (checkboxStyle == nil) {
+    return;
+  }
+  [checkboxStyle toggleCheckedAt:location withDirtyRange:YES];
+  [self anyTextMayHaveBeenModified];
 }
 
 - (void)setDefaults {
@@ -2118,8 +2227,7 @@ Class<RCTComponentViewProtocol> EnrichedTextInputViewCls(void) {
 
     if (checkboxStyle) {
       NSUInteger charIndex = (NSUInteger)gr.characterIndex;
-      [checkboxStyle toggleCheckedAt:charIndex withDirtyRange:YES];
-      [self anyTextMayHaveBeenModified];
+      [self toggleCheckboxAt:charIndex];
 
       NSString *fullText = textView.textStorage.string;
       NSRange paragraphRange =

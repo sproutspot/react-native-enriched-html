@@ -2,12 +2,35 @@
 #import "EnrichedTextInputView.h"
 #import "extensions/StringExtension.h"
 #import "htmlParser/HtmlParser.h"
+#import "utils/AccessibilityUtils.h"
 #import "utils/AlignmentUtils.h"
 #import "utils/TextInsertionUtils.h"
 #import "utils/TextListsUtils.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @implementation EnrichedInputTextView
+
+- (void)setIsAccessibilityElement:(BOOL)isAccessibilityElement {
+}
+
+- (NSString *)accessibilityLabel {
+  NSString *label = [super accessibilityLabel];
+  NSString *placeholder =
+      [(EnrichedTextInputView *)_input accessibilityPlaceholder];
+  if (placeholder.length == 0) {
+    return label;
+  }
+  if (label.length == 0) {
+    return placeholder;
+  }
+  return [NSString stringWithFormat:@"%@, %@", label, placeholder];
+}
+
+- (NSArray<UIAccessibilityCustomAction *> *)accessibilityCustomActions {
+  EnrichedTextInputView *input = (EnrichedTextInputView *)_input;
+  return [AccessibilityUtils mergeActions:[input accessibilityCustomActions]
+                                     with:[input checkboxAccessibilityActions]];
+}
 
 - (void)layoutSubviews {
   [super layoutSubviews];

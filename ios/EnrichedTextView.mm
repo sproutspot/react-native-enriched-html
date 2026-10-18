@@ -65,6 +65,16 @@ Class<RCTComponentViewProtocol> EnrichedTextViewCls(void) {
   return self;
 }
 
+// MARK: - Accessibility
+
+- (NSObject *)accessibilityElement {
+  return textView;
+}
+
+- (BOOL)isAccessibilityElement {
+  return NO;
+}
+
 - (void)setupTextView {
   EnrichedTextTextView *tv = [[EnrichedTextTextView alloc] init];
   _touchHandler = [[EnrichedTextTouchHandler alloc] initWithView:self];

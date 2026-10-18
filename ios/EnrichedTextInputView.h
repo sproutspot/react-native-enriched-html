@@ -48,6 +48,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)emitOnPasteImagesEvent:(NSArray<NSDictionary *> *)images;
 - (void)anyTextMayHaveBeenModified;
 - (void)scheduleRelayoutIfNeeded;
+- (nullable NSString *)accessibilityPlaceholder;
+- (NSArray<UIAccessibilityCustomAction *> *)checkboxAccessibilityActions;
 
 @end
 

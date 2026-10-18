@@ -6,6 +6,7 @@
 #import "interfaces/MentionParams.h"
 #import "interfaces/MentionStyleProps.h"
 #import "interfaces/StyleBase.h"
+#import "utils/AccessibilityUtils.h"
 
 @implementation EnrichedTextTouchHandler {
   NSRange _activeRange;
@@ -79,11 +80,7 @@
   if (idx == NSNotFound || idx >= self.view.textView.textStorage.length)
     return nil;
 
-  NSArray *keys = @[
-    @"EnrichedManualLink", @"EnrichedAutomaticLink", @"EnrichedMention",
-    @"EnrichedImage"
-  ];
-  for (NSString *k in keys) {
+  for (NSString *k in [self clickableKeys]) {
     id val = [self.view.textView.textStorage attribute:k
                                                atIndex:idx
                                         effectiveRange:range];
@@ -144,20 +141,100 @@
 }
 
 - (void)dispatchEvent {
-  if ([_activeAttrKey containsString:@"Link"]) {
-    [self.view emitOnLinkPressEvent:((LinkData *)_activeValue).url];
-  } else if ([_activeAttrKey isEqualToString:@"EnrichedMention"]) {
-    [self.view emitOnMentionPressEvent:(MentionParams *)_activeValue];
-  } else if ([_activeAttrKey isEqualToString:@"EnrichedImage"]) {
-    NSRange attachmentRange = _activeRange;
+  [self dispatchEventForKey:_activeAttrKey
+                      value:_activeValue
+                      range:_activeRange];
+}
+
+- (void)dispatchEventForKey:(NSString *)key
+                      value:(id)value
+                      range:(NSRange)range {
+  if ([key containsString:@"Link"]) {
+    [self.view emitOnLinkPressEvent:((LinkData *)value).url];
+  } else if ([key isEqualToString:@"EnrichedMention"]) {
+    [self.view emitOnMentionPressEvent:(MentionParams *)value];
+  } else if ([key isEqualToString:@"EnrichedImage"]) {
     ImageAttachment *attachment =
         [self.view.textView.textStorage attribute:NSAttachmentAttributeName
-                                          atIndex:attachmentRange.location
+                                          atIndex:range.location
                                    effectiveRange:NULL];
     if ([attachment isKindOfClass:[ImageAttachment class]]) {
       [self.view emitOnImagePressEvent:attachment];
     }
   }
+}
+
+- (NSArray<UIAccessibilityCustomAction *> *)accessibilityActions {
+  NSTextStorage *storage = self.view.textView.textStorage;
+  NSString *text = storage.string;
+  NSMutableArray<NSDictionary *> *clickables = [NSMutableArray array];
+
+  for (NSString *key in [self clickableKeys]) {
+    [storage enumerateAttribute:key
+                        inRange:NSMakeRange(0, storage.length)
+                        options:0
+                     usingBlock:^(id value, NSRange range, BOOL *stop) {
+                       if (value) {
+                         [clickables addObject:@{
+                           @"key" : key,
+                           @"value" : value,
+                           @"range" : [NSValue valueWithRange:range]
+                         }];
+                       }
+                     }];
+  }
+
+  [clickables sortUsingComparator:^NSComparisonResult(NSDictionary *a,
+                                                      NSDictionary *b) {
+    NSUInteger aLocation = [a[@"range"] rangeValue].location;
+    NSUInteger bLocation = [b[@"range"] rangeValue].location;
+    if (aLocation == bLocation) {
+      return NSOrderedSame;
+    }
+    return aLocation < bLocation ? NSOrderedAscending : NSOrderedDescending;
+  }];
+
+  NSMutableArray<UIAccessibilityCustomAction *> *actions =
+      [NSMutableArray array];
+  __weak EnrichedTextTouchHandler *weakSelf = self;
+  for (NSDictionary *clickable in clickables) {
+    NSString *key = clickable[@"key"];
+    id value = clickable[@"value"];
+    NSRange range = [clickable[@"range"] rangeValue];
+    NSString *spoken = [AccessibilityUtils spokenTextInRange:range
+                                                    ofString:text];
+
+    NSString *name;
+    if ([key containsString:@"Link"]) {
+      NSString *linkText = spoken.length > 0 ? spoken : ((LinkData *)value).url;
+      name = [NSString stringWithFormat:@"Open link: %@", linkText];
+    } else if ([key isEqualToString:@"EnrichedMention"]) {
+      NSString *mentionText =
+          spoken.length > 0 ? spoken : ((MentionParams *)value).text;
+      name = [NSString stringWithFormat:@"Open mention: %@", mentionText];
+    } else {
+      name = @"Open image";
+    }
+
+    [actions
+        addObject:[[UIAccessibilityCustomAction alloc]
+                       initWithName:name
+                      actionHandler:^BOOL(UIAccessibilityCustomAction *action) {
+                        [weakSelf dispatchEventForKey:key
+                                                value:value
+                                                range:range];
+                        return YES;
+                      }]];
+  }
+
+  return actions;
+}
+
+- (NSArray<NSString *> *)clickableKeys {
+  return @[
+    @"EnrichedManualLink", @"EnrichedAutomaticLink", @"EnrichedMention",
+    @"EnrichedImage"
+  ];
 }
 
 - (void)reset {

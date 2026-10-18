@@ -10,5 +10,6 @@
 - (void)handleTouchBeganAtPoint:(CGPoint)point;
 - (void)handleTouchEndedAtPoint:(CGPoint)point;
 - (void)handleTouchCancelled;
+- (NSArray<UIAccessibilityCustomAction *> *)accessibilityActions;
 
 @end
